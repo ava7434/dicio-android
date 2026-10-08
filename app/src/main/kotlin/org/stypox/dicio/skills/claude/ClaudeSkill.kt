@@ -20,12 +20,6 @@ class ClaudeSkill(correspondingSkillInfo: SkillInfo) :
     RecognizeEverythingSkill(correspondingSkillInfo) {
 
     override suspend fun generateOutput(ctx: SkillContext, inputData: String): SkillOutput {
-        if (!ClaudeInfo.isEnabled(ctx.android)) {
-            val askToRepeat = (ctx.previousOutput as? ClaudeOutput.NoMatch)
-                ?.let { !it.askToRepeat } ?: true
-            return ClaudeOutput.NoMatch(askToRepeat)
-        }
-
         val apiKey = ClaudeInfo.getApiKey(ctx.android) ?: return ClaudeOutput.NoApiKey
         val rememberConversation = ClaudeInfo.isMemoryEnabled(ctx.android)
 
@@ -128,3 +122,4 @@ class ClaudeSkill(correspondingSkillInfo: SkillInfo) :
         return answer
     }
     }
+    
