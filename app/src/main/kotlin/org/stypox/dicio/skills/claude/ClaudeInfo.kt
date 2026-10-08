@@ -22,10 +22,15 @@ import org.stypox.dicio.settings.ui.BooleanSetting
 import org.stypox.dicio.settings.ui.SettingsItem
 import org.stypox.dicio.settings.ui.StringSetting
 
+/**
+ * Catch-all skill with LOW specificity: it is only ever picked when no other skill (weather,
+ * calculator, etc.) matched the input with a high enough score, because of how SkillRanker
+ * handles specificity tiers. This means it naturally behaves as a fallback, and the user can
+ * enable/disable it from the normal skill list in Settings > Abilit\u00e0, just like any other skill.
+ */
 object ClaudeInfo : SkillInfo("claude") {
     private const val PREFS_NAME = "skill_settings_claude"
     private const val KEY_API_KEY = "api_key"
-    private const val KEY_ENABLED = "enabled"
     private const val KEY_MEMORY_ENABLED = "memory_enabled"
 
     override fun name(context: Context) = "Claude"
@@ -53,13 +58,7 @@ object ClaudeInfo : SkillInfo("claude") {
         prefs(context).edit().putString(KEY_API_KEY, value).apply()
     }
 
-    fun isEnabled(context: Context): Boolean =
-        prefs(context).getBoolean(KEY_ENABLED, true)
-
-    private fun setEnabled(context: Context, value: Boolean) {
-        prefs(context).edit().putBoolean(KEY_ENABLED, value).apply()
-    }
-
+    /** Whether Claude is given the last few exchanges as context. Defaults to true. */
     fun isMemoryEnabled(context: Context): Boolean =
         prefs(context).getBoolean(KEY_MEMORY_ENABLED, true)
 
@@ -69,23 +68,10 @@ object ClaudeInfo : SkillInfo("claude") {
 
     override val renderSettings: @Composable () -> Unit = @Composable {
         val context = LocalContext.current
-        var enabled by remember { mutableStateOf(isEnabled(context)) }
         var apiKey by remember { mutableStateOf(getApiKey(context) ?: "") }
         var memoryEnabled by remember { mutableStateOf(isMemoryEnabled(context)) }
 
         Column {
-            BooleanSetting(
-                title = "Chiedi a Claude quando non capisco",
-                descriptionOn = "Attivo: le frasi non riconosciute vengono inviate a Claude",
-                descriptionOff = "Disattivo: Dicio dirà solo \"non ho capito\" come prima",
-            ).Render(
-                value = enabled,
-                onValueChange = {
-                    enabled = it
-                    setEnabled(context, it)
-                },
-            )
-
             StringSetting(
                 title = "Anthropic API key",
                 description = "Usata per rispondere quando nessun altro skill capisce",
