@@ -49,3 +49,82 @@ class ClaudeSkill(correspondingSkillInfo: SkillInfo) :
     private fun askClaude(
         apiKey: String,
         history: List<ConversationMemory.Turn>,
+        question: String,
+    ): String {
+        val url = URL("https://api.anthropic.com/v1/messages")
+        val connection = url.openConnection() as HttpURLConnection
+        connection.requestMethod = "POST"
+        connection.setRequestProperty("Content-Type", "application/json")
+        connection.setRequestProperty("x-api-key", apiKey)
+        connection.setRequestProperty("anthropic-version", "2023-06-01")
+        connection.doOutput = true
+        connection.connectTimeout = 15_000
+        connection.readTimeout = 30_000
+
+        val messages = JSONArray()
+        for (turn in history) {
+            messages.put(JSONObject().apply {
+                put("role", "user")
+                put("content", turn.question)
+            })
+            messages.put(JSONObject().apply {
+                put("role", "assistant")
+                put("content", turn.answer)
+            })
+        }
+        messages.put(JSONObject().apply {
+            put("role", "user")
+            put("content", question)
+        })
+
+        val requestBody = JSONObject().apply {
+            put("model", "claude-haiku-5-5")
+            put("max_tokens", 300)
+            put(
+                "system",
+                "You are a voice assistant fallback. Answer in at most two short " +
+                        "sentences, in plain spoken language, no markdown, no lists."
+            )
+            put("messages", messages)
+        }
+
+        OutputStreamWriter(connection.outputStream, StandardCharsets.UTF_8).use { writer ->
+            writer.write(requestBody.toString())
+        }
+
+        val responseCode = connection.responseCode
+        val stream = if (responseCode in 200..299) {
+            connection.inputStream
+        } else {
+            connection.errorStream
+        }
+
+        val responseText = BufferedReader(InputStreamReader(stream, StandardCharsets.UTF_8))
+            .use { it.readText() }
+
+        if (responseCode !in 200..299) {
+            val errorMessage = try {
+                JSONObject(responseText).getJSONObject("error").getString("message")
+            } catch (_: Exception) {
+                "HTTP $responseCode"
+            }
+            throw IOException(errorMessage)
+        }
+
+        val responseJson = JSONObject(responseText)
+        val contentArray = responseJson.getJSONArray("content")
+        val textBuilder = StringBuilder()
+        for (i in 0 until contentArray.length()) {
+            val block = contentArray.getJSONObject(i)
+            if (block.optString("type") == "text") {
+                textBuilder.append(block.getString("text"))
+            }
+        }
+
+        val answer = textBuilder.toString().trim()
+        if (answer.isEmpty()) {
+            throw IOException("empty response")
+        }
+        return answer
+    }
+    }
