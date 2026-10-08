@@ -48,4 +48,4 @@ class ClaudeSkill(correspondingSkillInfo: SkillInfo) :
     @Throws(IOException::class)
     private fun askClaude(
         apiKey: String,
-        history: List<Conv
+        history: List<ConversationMemory.Turn>,
