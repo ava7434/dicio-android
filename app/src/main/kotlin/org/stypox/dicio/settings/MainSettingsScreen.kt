@@ -36,6 +36,7 @@ import org.stypox.dicio.io.input.SttInputDevice
 import org.stypox.dicio.settings.datastore.InputDevice
 import org.stypox.dicio.settings.datastore.Language
 import org.stypox.dicio.settings.datastore.SpeechOutputDevice
+import org.stypox.dicio.io.speech.AndroidTtsSpeechDevice
 import org.stypox.dicio.settings.datastore.SttPlaySound
 import org.stypox.dicio.settings.datastore.Theme
 import org.stypox.dicio.settings.datastore.UserSettingsModule.Companion.newDataStoreForPreviews
@@ -176,6 +177,18 @@ private fun MainSettingsScreen(
                     else -> speechOutputDevice
                 },
                 viewModel::setSpeechOutputDevice,
+            )
+        }
+        item {
+            ttsPitch().Render(
+                AndroidTtsSpeechDevice.getTenthsOrDefault(settings.ttsPitch),
+                viewModel::setTtsPitch,
+            )
+        }
+        item {
+            ttsSpeechRate().Render(
+                AndroidTtsSpeechDevice.getTenthsOrDefault(settings.ttsSpeechRate),
+                viewModel::setTtsSpeechRate,
             )
         }
         item {

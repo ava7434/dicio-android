@@ -32,6 +32,9 @@ object ClaudeInfo : SkillInfo("claude") {
     private const val PREFS_NAME = "skill_settings_claude"
     private const val KEY_API_KEY = "api_key"
     private const val KEY_MEMORY_ENABLED = "memory_enabled"
+    private const val KEY_JARVIS_ENABLED = "jarvis_enabled"
+    private const val KEY_USER_TITLE = "user_title"
+    private const val DEFAULT_USER_TITLE = "signore"
 
     override fun name(context: Context) = "Claude"
 
@@ -66,10 +69,32 @@ object ClaudeInfo : SkillInfo("claude") {
         prefs(context).edit().putBoolean(KEY_MEMORY_ENABLED, value).apply()
     }
 
+    /** Whether Claude answers with the "Jarvis" butler-like personality. Defaults to true. */
+    fun isJarvisEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_JARVIS_ENABLED, true)
+
+    private fun setJarvisEnabled(context: Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_JARVIS_ENABLED, value).apply()
+    }
+
+    /** How the Jarvis personality addresses the user, e.g. "signore". */
+    fun getUserTitle(context: Context): String {
+        val title = prefs(context).getString(KEY_USER_TITLE, null)
+        return if (title.isNullOrBlank()) DEFAULT_USER_TITLE else title.trim()
+    }
+
+    private fun setUserTitle(context: Context, value: String) {
+        prefs(context).edit().putString(KEY_USER_TITLE, value).apply()
+    }
+
     override val renderSettings: @Composable () -> Unit = @Composable {
         val context = LocalContext.current
         var apiKey by remember { mutableStateOf(getApiKey(context) ?: "") }
         var memoryEnabled by remember { mutableStateOf(isMemoryEnabled(context)) }
+        var jarvisEnabled by remember { mutableStateOf(isJarvisEnabled(context)) }
+        var userTitle by remember {
+            mutableStateOf(prefs(context).getString(KEY_USER_TITLE, null) ?: "")
+        }
 
         Column {
             StringSetting(
@@ -95,6 +120,32 @@ object ClaudeInfo : SkillInfo("claude") {
                     setMemoryEnabled(context, it)
                 },
             )
+
+            BooleanSetting(
+                title = "Personalità Jarvis",
+                descriptionOn = "Risponde come un maggiordomo digitale: cortese, calmo, un po' ironico",
+                descriptionOff = "Risposte neutre e sintetiche",
+            ).Render(
+                value = jarvisEnabled,
+                onValueChange = {
+                    jarvisEnabled = it
+                    setJarvisEnabled(context, it)
+                },
+            )
+
+            if (jarvisEnabled) {
+                StringSetting(
+                    title = "Come vuoi essere chiamato",
+                    description = "Jarvis si rivolgerà a te così",
+                    descriptionWhenEmpty = "Predefinito: \"$DEFAULT_USER_TITLE\"",
+                ).Render(
+                    value = userTitle,
+                    onValueChange = { newValue ->
+                        userTitle = newValue
+                        setUserTitle(context, newValue)
+                    },
+                )
+            }
 
             SettingsItem(
                 title = "Cancella memoria conversazione",

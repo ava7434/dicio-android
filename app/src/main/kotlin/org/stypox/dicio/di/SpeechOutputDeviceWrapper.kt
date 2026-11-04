@@ -8,6 +8,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import org.dicio.skill.context.SpeechOutputDevice
 import org.stypox.dicio.io.speech.AndroidTtsSpeechDevice
@@ -37,8 +38,23 @@ class SpeechOutputDeviceWrapper @Inject constructor(
     // instantiate SpeechOutputDevices on the main thread
     private val scope = CoroutineScope(Dispatchers.Main)
     private var wrappedSpeechDevice: SpeechOutputDevice = NothingSpeechDevice()
+    private var ttsPitch = 1.0f
+    private var ttsSpeechRate = 1.0f
 
     init {
+        scope.launch {
+            // pitch and rate are applied to the existing device, without recreating it, so that
+            // moving the sliders in the settings does not restart the TTS engine every time
+            dataStore.data
+                .map { Pair(it.ttsPitch, it.ttsSpeechRate) }
+                .distinctUntilChanged()
+                .collect { (pitch, rate) ->
+                    ttsPitch = AndroidTtsSpeechDevice.getTenthsOrDefault(pitch) / 10f
+                    ttsSpeechRate = AndroidTtsSpeechDevice.getTenthsOrDefault(rate) / 10f
+                    applyVoiceParams(wrappedSpeechDevice)
+                }
+        }
+
         scope.launch {
             dataStore.data
                 .combine(localeManager.locale) { userSettings, locale ->
@@ -59,11 +75,18 @@ class SpeechOutputDeviceWrapper @Inject constructor(
                         SPEECH_OUTPUT_DEVICE_TOAST -> ToastSpeechDevice(context)
                         SPEECH_OUTPUT_DEVICE_SNACKBAR -> snackbarSpeechDevice
                     }
+                    applyVoiceParams(wrappedSpeechDevice)
                     prevDevice.cleanup()
                 }
         }
     }
 
+    private fun applyVoiceParams(device: SpeechOutputDevice) {
+        if (device is AndroidTtsSpeechDevice) {
+            device.pitch = ttsPitch
+            device.speechRate = ttsSpeechRate
+        }
+    }
 
     override fun speak(speechOutput: String) {
         wrappedSpeechDevice.speak(speechOutput)

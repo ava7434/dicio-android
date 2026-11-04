@@ -22,11 +22,16 @@ class ClaudeSkill(correspondingSkillInfo: SkillInfo) :
     override suspend fun generateOutput(ctx: SkillContext, inputData: String): SkillOutput {
         val apiKey = ClaudeInfo.getApiKey(ctx.android) ?: return ClaudeOutput.NoApiKey
         val rememberConversation = ClaudeInfo.isMemoryEnabled(ctx.android)
+        val systemPrompt = if (ClaudeInfo.isJarvisEnabled(ctx.android)) {
+            jarvisSystemPrompt(ClaudeInfo.getUserTitle(ctx.android))
+        } else {
+            NEUTRAL_SYSTEM_PROMPT
+        }
 
         return withContext(Dispatchers.IO) {
             try {
                 val history = if (rememberConversation) ConversationMemory.get() else emptyList()
-                val answer = askClaude(apiKey, history, inputData)
+                val answer = askClaude(apiKey, systemPrompt, history, inputData)
                 if (rememberConversation) {
                     ConversationMemory.add(inputData, answer)
                 }
@@ -42,6 +47,7 @@ class ClaudeSkill(correspondingSkillInfo: SkillInfo) :
     @Throws(IOException::class)
     private fun askClaude(
         apiKey: String,
+        systemPrompt: String,
         history: List<ConversationMemory.Turn>,
         question: String,
     ): String {
@@ -74,11 +80,7 @@ class ClaudeSkill(correspondingSkillInfo: SkillInfo) :
         val requestBody = JSONObject().apply {
             put("model", "claude-haiku-5-5")
             put("max_tokens", 300)
-            put(
-                "system",
-                "You are a voice assistant fallback. Answer in at most two short " +
-                        "sentences, in plain spoken language, no markdown, no lists."
-            )
+            put("system", systemPrompt)
             put("messages", messages)
         }
 
@@ -121,5 +123,24 @@ class ClaudeSkill(correspondingSkillInfo: SkillInfo) :
         }
         return answer
     }
+
+    companion object {
+        private const val VOICE_RULES =
+            "Your answers are read aloud by a text-to-speech engine: answer in at most two " +
+                    "short sentences, in plain spoken language, with no markdown, no lists, " +
+                    "no emoji and no symbols that cannot be pronounced. Always reply in the " +
+                    "same language the user speaks."
+
+        private const val NEUTRAL_SYSTEM_PROMPT =
+            "You are a voice assistant fallback. $VOICE_RULES"
+
+        private fun jarvisSystemPrompt(userTitle: String) =
+            "You are Jarvis, the personal AI assistant living in the user's smartphone. " +
+                    "Your personality is that of a refined, loyal digital butler: calm, " +
+                    "precise, unfailingly polite and quietly confident, with a dry, subtle " +
+                    "sense of humour used sparingly. Address the user as \"$userTitle\" now " +
+                    "and then, but not in every sentence. Get straight to the point, never " +
+                    "grovel, and if something is impossible or unknown, say so elegantly. " +
+                    VOICE_RULES
     }
-    
+}

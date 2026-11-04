@@ -242,4 +242,8 @@
     <string name="failed_to_copy">Impossibile copiare negli appunti</string>
     <string name="skill_translation_auto">Auto</string>
     <string name="skill_search_duckduckgo_recaptcha">DuckDuckGo non ha fornito risultati: richiede la risoluzione di un Captcha</string>
+    <string name="pref_tts_pitch_title">Tono della voce</string>
+    <string name="pref_tts_pitch_description">Tono %1$.1fx (più basso = voce più profonda)</string>
+    <string name="pref_tts_speech_rate_title">Velocità della voce</string>
+    <string name="pref_tts_speech_rate_description">Velocità %1$.1fx</string>
 </resources>
