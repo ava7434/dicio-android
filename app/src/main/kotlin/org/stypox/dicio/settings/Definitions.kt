@@ -21,6 +21,8 @@ import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.SpeakerPhone
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.res.stringResource
 import org.stypox.dicio.R
@@ -171,6 +173,24 @@ fun speechOutputDevice() = ListSetting(
             name = stringResource(R.string.pref_speech_output_method_nothing),
         ),
     ),
+)
+
+@Composable
+fun ttsPitch() = IntSetting(
+    title = stringResource(R.string.pref_tts_pitch_title),
+    icon = Icons.Default.GraphicEq,
+    description = @Composable { stringResource(R.string.pref_tts_pitch_description, it / 10f) },
+    minimum = 5,
+    maximum = 20,
+)
+
+@Composable
+fun ttsSpeechRate() = IntSetting(
+    title = stringResource(R.string.pref_tts_speech_rate_title),
+    icon = Icons.Default.Speed,
+    description = @Composable { stringResource(R.string.pref_tts_speech_rate_description, it / 10f) },
+    minimum = 5,
+    maximum = 20,
 )
 
 @Composable

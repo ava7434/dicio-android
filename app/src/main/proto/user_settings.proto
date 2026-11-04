@@ -21,4 +21,7 @@ message UserSettings {
     WakeDevice wake_device = 8;
     SttPlaySound stt_play_sound = 9;
     int32 stt_silence_duration = 10;
+    // in tenths (10 = normal); 0 means unset and is treated as 10
+    int32 tts_pitch = 11;
+    int32 tts_speech_rate = 12;
 }

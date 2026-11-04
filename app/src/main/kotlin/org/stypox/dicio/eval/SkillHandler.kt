@@ -65,3 +65,47 @@ class SkillHandler @Inject constructor(
     private val fallbackSkillInfoList = listOf(
         TextFallbackInfo,
     )
+
+    private val scope = CoroutineScope(Dispatchers.Default)
+
+    // will be null when it has not been initialized yet
+    private val _enabledSkillsInfo: MutableStateFlow<List<SkillInfo>?> = MutableStateFlow(null)
+    val enabledSkillsInfo: StateFlow<List<SkillInfo>?> = _enabledSkillsInfo
+
+    private val _skillRanker = MutableStateFlow(
+        // an initial dummy value, will be overwritten directly by the launched job
+        SkillRanker(listOf(), fallbackSkillInfoList[0].build(skillContext)!!)
+    )
+    val skillRanker: StateFlow<SkillRanker> = _skillRanker
+
+    init {
+        scope.launch {
+            localeManager.locale
+                .combine(dataStore.data) { locale, data -> Pair(locale, data.enabledSkillsMap) }
+                .distinctUntilChanged()
+                .collectLatest { (_, enabledSkills) ->
+                    // locale is not used here, because the skills directly use the sections locale
+
+                    val newEnabledSkillsInfo = allSkillInfoList
+                        .filter { enabledSkills.getOrDefault(it.id, true) }
+                        .mapNotNull { info -> info.build(skillContext)?.let { skill -> Pair(info, skill) } }
+
+                    _enabledSkillsInfo.value = newEnabledSkillsInfo.map { (info, _skill) -> info }
+                    _skillRanker.value = SkillRanker(
+                        newEnabledSkillsInfo.map { (_info, skill) -> skill },
+                        fallbackSkillInfoList[0].build(skillContext)!!,
+                    )
+                }
+        }
+    }
+
+    companion object {
+        fun newForPreviews(context: Context): SkillHandler {
+            return SkillHandler(
+                UserSettingsModule.newDataStoreForPreviews(),
+                LocaleManager.newForPreviews(context),
+                SkillContextImpl.newForPreviews(context),
+            )
+        }
+    }
+}

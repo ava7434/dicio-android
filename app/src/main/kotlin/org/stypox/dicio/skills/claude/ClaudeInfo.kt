@@ -19,6 +19,7 @@ import org.dicio.skill.context.SkillContext
 import org.dicio.skill.skill.Skill
 import org.dicio.skill.skill.SkillInfo
 import org.stypox.dicio.settings.ui.BooleanSetting
+import org.stypox.dicio.settings.ui.ListSetting
 import org.stypox.dicio.settings.ui.SettingsItem
 import org.stypox.dicio.settings.ui.StringSetting
 
@@ -30,13 +31,30 @@ import org.stypox.dicio.settings.ui.StringSetting
  */
 object ClaudeInfo : SkillInfo("claude") {
     private const val PREFS_NAME = "skill_settings_claude"
-    private const val KEY_API_KEY = "api_key"
+    private const val KEY_API_KEY = "api_key" // Anthropic key, name kept for compatibility
+    private const val KEY_PROVIDER = "provider"
+    private const val KEY_GEMINI_API_KEY = "gemini_api_key"
+    private const val KEY_GEMINI_MODEL = "gemini_model"
+    // aliases that Google keeps pointing to its current Flash models, which have a free tier;
+    // the lite one is the default because it is faster and less often overloaded, which
+    // matters for short spoken answers, while the full one is tried when it fails
+    const val DEFAULT_GEMINI_MODEL = "gemini-flash-lite-latest"
+    const val FALLBACK_GEMINI_MODEL = "gemini-flash-latest"
     private const val KEY_MEMORY_ENABLED = "memory_enabled"
+    private const val KEY_JARVIS_ENABLED = "jarvis_enabled"
+    private const val KEY_USER_TITLE = "user_title"
+    private const val DEFAULT_USER_TITLE = "signore"
 
-    override fun name(context: Context) = "Claude"
+    /** The AI service that answers the questions not handled by the other skills. */
+    enum class Provider(val id: String, val displayName: String) {
+        CLAUDE("claude", "Claude"),
+        GEMINI("gemini", "Gemini"),
+    }
+
+    override fun name(context: Context) = "Assistente AI"
 
     override fun sentenceExample(context: Context) =
-        "Ask anything not understood by other skills"
+        "Fai qualsiasi domanda che le altre abilità non capiscono"
 
     @Composable
     override fun icon() =
@@ -49,13 +67,37 @@ object ClaudeInfo : SkillInfo("claude") {
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    fun getApiKey(context: Context): String? {
-        val key = prefs(context).getString(KEY_API_KEY, null)
-        return if (key.isNullOrBlank()) null else key
+    fun getProvider(context: Context): Provider {
+        val id = prefs(context).getString(KEY_PROVIDER, null)
+        return Provider.entries.firstOrNull { it.id == id } ?: Provider.CLAUDE
     }
 
-    private fun setApiKey(context: Context, value: String) {
-        prefs(context).edit().putString(KEY_API_KEY, value).apply()
+    private fun setProvider(context: Context, value: Provider) {
+        prefs(context).edit().putString(KEY_PROVIDER, value.id).apply()
+    }
+
+    private fun apiKeyPref(provider: Provider) = when (provider) {
+        Provider.CLAUDE -> KEY_API_KEY
+        Provider.GEMINI -> KEY_GEMINI_API_KEY
+    }
+
+    /** The API key of [provider], or null if it was not set. */
+    fun getApiKey(context: Context, provider: Provider): String? {
+        val key = prefs(context).getString(apiKeyPref(provider), null)
+        return if (key.isNullOrBlank()) null else key.trim()
+    }
+
+    private fun setApiKey(context: Context, provider: Provider, value: String) {
+        prefs(context).edit().putString(apiKeyPref(provider), value).apply()
+    }
+
+    fun getGeminiModel(context: Context): String {
+        val model = prefs(context).getString(KEY_GEMINI_MODEL, null)
+        return if (model.isNullOrBlank()) DEFAULT_GEMINI_MODEL else model.trim()
+    }
+
+    private fun setGeminiModel(context: Context, value: String) {
+        prefs(context).edit().putString(KEY_GEMINI_MODEL, value).apply()
     }
 
     /** Whether Claude is given the last few exchanges as context. Defaults to true. */
@@ -66,27 +108,107 @@ object ClaudeInfo : SkillInfo("claude") {
         prefs(context).edit().putBoolean(KEY_MEMORY_ENABLED, value).apply()
     }
 
+    /** Whether Claude answers with the "Jarvis" butler-like personality. Defaults to true. */
+    fun isJarvisEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_JARVIS_ENABLED, true)
+
+    private fun setJarvisEnabled(context: Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_JARVIS_ENABLED, value).apply()
+    }
+
+    /** How the Jarvis personality addresses the user, e.g. "signore". */
+    fun getUserTitle(context: Context): String {
+        val title = prefs(context).getString(KEY_USER_TITLE, null)
+        return if (title.isNullOrBlank()) DEFAULT_USER_TITLE else title.trim()
+    }
+
+    private fun setUserTitle(context: Context, value: String) {
+        prefs(context).edit().putString(KEY_USER_TITLE, value).apply()
+    }
+
     override val renderSettings: @Composable () -> Unit = @Composable {
         val context = LocalContext.current
-        var apiKey by remember { mutableStateOf(getApiKey(context) ?: "") }
+        var provider by remember { mutableStateOf(getProvider(context)) }
+        var claudeKey by remember { mutableStateOf(getApiKey(context, Provider.CLAUDE) ?: "") }
+        var geminiKey by remember { mutableStateOf(getApiKey(context, Provider.GEMINI) ?: "") }
+        var geminiModel by remember {
+            mutableStateOf(prefs(context).getString(KEY_GEMINI_MODEL, null) ?: "")
+        }
         var memoryEnabled by remember { mutableStateOf(isMemoryEnabled(context)) }
+        var jarvisEnabled by remember { mutableStateOf(isJarvisEnabled(context)) }
+        var userTitle by remember {
+            mutableStateOf(prefs(context).getString(KEY_USER_TITLE, null) ?: "")
+        }
 
         Column {
-            StringSetting(
-                title = "Anthropic API key",
-                description = "Usata per rispondere quando nessun altro skill capisce",
-                descriptionWhenEmpty = "Non impostata: il fallback resterà silenzioso",
+            ListSetting(
+                title = "Servizio AI",
+                description = "Chi risponde alle domande libere",
+                possibleValues = listOf(
+                    ListSetting.Value(
+                        value = Provider.GEMINI,
+                        name = "Gemini (Google)",
+                        description = "Ha un piano gratuito, chiave su aistudio.google.com",
+                    ),
+                    ListSetting.Value(
+                        value = Provider.CLAUDE,
+                        name = "Claude (Anthropic)",
+                        description = "A pagamento, chiave su console.anthropic.com",
+                    ),
+                ),
             ).Render(
-                value = apiKey,
-                onValueChange = { newValue ->
-                    apiKey = newValue
-                    setApiKey(context, newValue)
+                value = provider,
+                onValueChange = {
+                    provider = it
+                    setProvider(context, it)
                 },
             )
 
+            when (provider) {
+                Provider.GEMINI -> {
+                    StringSetting(
+                        title = "Gemini API key",
+                        description = "Chiave gratuita da aistudio.google.com",
+                        descriptionWhenEmpty = "Non impostata: crea una chiave su aistudio.google.com",
+                        isSecret = true,
+                    ).Render(
+                        value = geminiKey,
+                        onValueChange = { newValue ->
+                            geminiKey = newValue
+                            setApiKey(context, Provider.GEMINI, newValue)
+                        },
+                    )
+                    StringSetting(
+                        title = "Modello Gemini",
+                        description = "Lascia vuoto per usare il predefinito",
+                        descriptionWhenEmpty = "Predefinito: $DEFAULT_GEMINI_MODEL",
+                    ).Render(
+                        value = geminiModel,
+                        onValueChange = { newValue ->
+                            geminiModel = newValue
+                            setGeminiModel(context, newValue)
+                        },
+                    )
+                }
+                Provider.CLAUDE -> {
+                    StringSetting(
+                        title = "Anthropic API key",
+                        description = "Usata per rispondere quando nessun altro skill capisce",
+                        descriptionWhenEmpty = "Non impostata: il fallback resterà silenzioso",
+                        isSecret = true,
+                    ).Render(
+                        value = claudeKey,
+                        onValueChange = { newValue ->
+                            claudeKey = newValue
+                            setApiKey(context, Provider.CLAUDE, newValue)
+                        },
+                    )
+                }
+            }
+
             BooleanSetting(
                 title = "Ricorda la conversazione",
-                descriptionOn = "Claude vede le ultime domande/risposte per capire il contesto",
+                descriptionOn = "L'assistente vede le ultime domande/risposte per capire il contesto",
                 descriptionOff = "Ogni domanda viene inviata senza contesto precedente",
             ).Render(
                 value = memoryEnabled,
@@ -95,6 +217,32 @@ object ClaudeInfo : SkillInfo("claude") {
                     setMemoryEnabled(context, it)
                 },
             )
+
+            BooleanSetting(
+                title = "Personalità Jarvis",
+                descriptionOn = "Risponde come un maggiordomo digitale: cortese, calmo, un po' ironico",
+                descriptionOff = "Risposte neutre e sintetiche",
+            ).Render(
+                value = jarvisEnabled,
+                onValueChange = {
+                    jarvisEnabled = it
+                    setJarvisEnabled(context, it)
+                },
+            )
+
+            if (jarvisEnabled) {
+                StringSetting(
+                    title = "Come vuoi essere chiamato",
+                    description = "Jarvis si rivolgerà a te così",
+                    descriptionWhenEmpty = "Predefinito: \"$DEFAULT_USER_TITLE\"",
+                ).Render(
+                    value = userTitle,
+                    onValueChange = { newValue ->
+                        userTitle = newValue
+                        setUserTitle(context, newValue)
+                    },
+                )
+            }
 
             SettingsItem(
                 title = "Cancella memoria conversazione",

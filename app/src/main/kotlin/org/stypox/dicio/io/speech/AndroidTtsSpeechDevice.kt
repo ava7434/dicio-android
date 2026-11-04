@@ -16,6 +16,12 @@ class AndroidTtsSpeechDevice(private var context: Context, locale: Locale) : Spe
     private val runnablesWhenFinished: MutableList<Runnable> = ArrayList()
     private var lastUtteranceId = 0
 
+    /** Voice pitch multiplier (1.0 = normal, lower = deeper), applied on every utterance. */
+    var pitch: Float = 1.0f
+
+    /** Speech rate multiplier (1.0 = normal), applied on every utterance. */
+    var speechRate: Float = 1.0f
+
     init {
         textToSpeech = TextToSpeech(context) { status: Int ->
             if (status == TextToSpeech.SUCCESS) {
@@ -56,6 +62,8 @@ class AndroidTtsSpeechDevice(private var context: Context, locale: Locale) : Spe
     override fun speak(speechOutput: String) {
         if (initializedCorrectly) {
             lastUtteranceId += 1
+            textToSpeech?.setPitch(pitch)
+            textToSpeech?.setSpeechRate(speechRate)
             textToSpeech?.speak(
                 speechOutput, TextToSpeech.QUEUE_ADD, null,
                 "dicio_$lastUtteranceId"
@@ -94,5 +102,11 @@ class AndroidTtsSpeechDevice(private var context: Context, locale: Locale) : Spe
 
     companion object {
         val TAG: String = AndroidTtsSpeechDevice::class.simpleName!!
+
+        private const val DEFAULT_TENTHS = 10
+
+        /** Pitch and speech rate are stored in tenths in the settings, with 0 meaning unset. */
+        fun getTenthsOrDefault(value: Int): Int =
+            value.takeIf { it > 0 } ?: DEFAULT_TENTHS
     }
 }

@@ -9,13 +9,14 @@ sealed interface ClaudeOutput : HeadlineSpeechSkillOutput {
         override fun getSpeechOutput(ctx: SkillContext): String = answer
     }
 
-    data object NoApiKey : ClaudeOutput {
+    data class NoApiKey(val providerName: String) : ClaudeOutput {
         override fun getSpeechOutput(ctx: SkillContext): String =
-            "No Anthropic API key is set. Add one in the Claude skill settings."
+            "Manca la chiave API di $providerName. Aggiungila nelle impostazioni " +
+                    "dell'abilità Assistente AI."
     }
 
-    data class Failed(val reason: String) : ClaudeOutput {
+    data class Failed(val providerName: String, val reason: String) : ClaudeOutput {
         override fun getSpeechOutput(ctx: SkillContext): String =
-            "I could not reach Claude: $reason"
+            "Non sono riuscito a contattare $providerName: $reason"
     }
 }
