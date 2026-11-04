@@ -14,6 +14,7 @@ import java.io.IOException
 import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
+import java.net.SocketTimeoutException
 import java.net.URL
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
@@ -136,9 +137,10 @@ class ClaudeSkill(correspondingSkillInfo: SkillInfo) :
     }
 
     /**
-     * Free-tier Gemini models are often temporarily overloaded (HTTP 503) or hit transient
-     * server errors. Retry once after a short pause, then fall back to the lighter (and usually
-     * less busy) model, so that the user rarely has to ask again.
+     * Free-tier Gemini models are often temporarily overloaded (HTTP 503), hit transient server
+     * errors, or answer too slowly. On an overload retry once after a short pause; on a timeout
+     * or a repeated failure switch to the other Flash model, so that the user rarely has to ask
+     * again and never waits too long.
      */
     @Throws(IOException::class)
     private suspend fun askGeminiWithRetry(
@@ -148,16 +150,24 @@ class ClaudeSkill(correspondingSkillInfo: SkillInfo) :
         history: List<ConversationMemory.Turn>,
         question: String,
     ): String {
-        val models = listOf(model, ClaudeInfo.FALLBACK_GEMINI_MODEL).distinct()
-        var lastError: GeminiHttpException? = null
-        for (currentModel in models) {
-            repeat(2) { attempt ->
+        val otherModel = if (model == ClaudeInfo.DEFAULT_GEMINI_MODEL) {
+            ClaudeInfo.FALLBACK_GEMINI_MODEL
+        } else {
+            ClaudeInfo.DEFAULT_GEMINI_MODEL
+        }
+        var lastError: IOException? = null
+        for (currentModel in listOf(model, otherModel)) {
+            for (attempt in 0 until 2) {
                 try {
                     return askGemini(apiKey, currentModel, systemPrompt, history, question)
                 } catch (e: GeminiHttpException) {
                     if (!e.isTemporary) throw e
                     lastError = e
                     if (attempt == 0) delay(1_500)
+                } catch (e: SocketTimeoutException) {
+                    // a slow model will likely be slow again: move on to the other one
+                    lastError = e
+                    break
                 }
             }
         }
@@ -195,7 +205,7 @@ class ClaudeSkill(correspondingSkillInfo: SkillInfo) :
         connection.setRequestProperty("x-goog-api-key", apiKey)
         connection.doOutput = true
         connection.connectTimeout = 15_000
-        connection.readTimeout = 30_000
+        connection.readTimeout = 20_000
 
         fun content(role: String, text: String) = JSONObject().apply {
             put("role", role)

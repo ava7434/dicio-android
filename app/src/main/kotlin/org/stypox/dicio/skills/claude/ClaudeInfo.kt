@@ -35,10 +35,11 @@ object ClaudeInfo : SkillInfo("claude") {
     private const val KEY_PROVIDER = "provider"
     private const val KEY_GEMINI_API_KEY = "gemini_api_key"
     private const val KEY_GEMINI_MODEL = "gemini_model"
-    // alias that Google keeps pointing to its current Flash model, which has a free tier
-    const val DEFAULT_GEMINI_MODEL = "gemini-flash-latest"
-    // lighter model, used automatically when the chosen one is overloaded
-    const val FALLBACK_GEMINI_MODEL = "gemini-flash-lite-latest"
+    // aliases that Google keeps pointing to its current Flash models, which have a free tier;
+    // the lite one is the default because it is faster and less often overloaded, which
+    // matters for short spoken answers, while the full one is tried when it fails
+    const val DEFAULT_GEMINI_MODEL = "gemini-flash-lite-latest"
+    const val FALLBACK_GEMINI_MODEL = "gemini-flash-latest"
     private const val KEY_MEMORY_ENABLED = "memory_enabled"
     private const val KEY_JARVIS_ENABLED = "jarvis_enabled"
     private const val KEY_USER_TITLE = "user_title"
