@@ -14,13 +14,16 @@ import java.io.InputStreamReader
 import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
 class ClaudeSkill(correspondingSkillInfo: SkillInfo) :
     RecognizeEverythingSkill(correspondingSkillInfo) {
 
     override suspend fun generateOutput(ctx: SkillContext, inputData: String): SkillOutput {
-        val apiKey = ClaudeInfo.getApiKey(ctx.android) ?: return ClaudeOutput.NoApiKey
+        val provider = ClaudeInfo.getProvider(ctx.android)
+        val apiKey = ClaudeInfo.getApiKey(ctx.android, provider)
+            ?: return ClaudeOutput.NoApiKey(provider.displayName)
         val rememberConversation = ClaudeInfo.isMemoryEnabled(ctx.android)
         val systemPrompt = if (ClaudeInfo.isJarvisEnabled(ctx.android)) {
             jarvisSystemPrompt(ClaudeInfo.getUserTitle(ctx.android))
@@ -31,15 +34,22 @@ class ClaudeSkill(correspondingSkillInfo: SkillInfo) :
         return withContext(Dispatchers.IO) {
             try {
                 val history = if (rememberConversation) ConversationMemory.get() else emptyList()
-                val answer = askClaude(apiKey, systemPrompt, history, inputData)
+                val answer = when (provider) {
+                    ClaudeInfo.Provider.CLAUDE ->
+                        askClaude(apiKey, systemPrompt, history, inputData)
+                    ClaudeInfo.Provider.GEMINI -> askGemini(
+                        apiKey, ClaudeInfo.getGeminiModel(ctx.android),
+                        systemPrompt, history, inputData,
+                    )
+                }
                 if (rememberConversation) {
                     ConversationMemory.add(inputData, answer)
                 }
                 ClaudeOutput.Success(answer)
             } catch (e: IOException) {
-                ClaudeOutput.Failed(e.message ?: "network error")
+                ClaudeOutput.Failed(provider.displayName, e.message ?: "errore di rete")
             } catch (e: Exception) {
-                ClaudeOutput.Failed(e.message ?: "unexpected error")
+                ClaudeOutput.Failed(provider.displayName, e.message ?: "errore imprevisto")
             }
         }
     }
@@ -120,6 +130,97 @@ class ClaudeSkill(correspondingSkillInfo: SkillInfo) :
         val answer = textBuilder.toString().trim()
         if (answer.isEmpty()) {
             throw IOException("empty response")
+        }
+        return answer
+    }
+
+    /**
+     * Uses the Gemini API (generateContent), which has a free tier. The key is sent in the
+     * x-goog-api-key header rather than in the URL, so it does not end up in logs.
+     */
+    @Throws(IOException::class)
+    private fun askGemini(
+        apiKey: String,
+        model: String,
+        systemPrompt: String,
+        history: List<ConversationMemory.Turn>,
+        question: String,
+    ): String {
+        val url = URL(
+            "https://generativelanguage.googleapis.com/v1beta/models/" +
+                    URLEncoder.encode(model, "UTF-8") + ":generateContent"
+        )
+        val connection = url.openConnection() as HttpURLConnection
+        connection.requestMethod = "POST"
+        connection.setRequestProperty("Content-Type", "application/json")
+        connection.setRequestProperty("x-goog-api-key", apiKey)
+        connection.doOutput = true
+        connection.connectTimeout = 15_000
+        connection.readTimeout = 30_000
+
+        fun content(role: String, text: String) = JSONObject().apply {
+            put("role", role)
+            put("parts", JSONArray().put(JSONObject().put("text", text)))
+        }
+
+        val contents = JSONArray()
+        for (turn in history) {
+            contents.put(content("user", turn.question))
+            contents.put(content("model", turn.answer))
+        }
+        contents.put(content("user", question))
+
+        val requestBody = JSONObject().apply {
+            put(
+                "system_instruction",
+                JSONObject().put("parts", JSONArray().put(JSONObject().put("text", systemPrompt)))
+            )
+            put("contents", contents)
+            // generous limit: some Gemini models spend part of it on internal reasoning,
+            // while the system prompt already keeps the spoken answer short
+            put("generationConfig", JSONObject().put("maxOutputTokens", 1024))
+        }
+
+        OutputStreamWriter(connection.outputStream, StandardCharsets.UTF_8).use { writer ->
+            writer.write(requestBody.toString())
+        }
+
+        val responseCode = connection.responseCode
+        val stream = if (responseCode in 200..299) {
+            connection.inputStream
+        } else {
+            connection.errorStream
+        }
+        val responseText = BufferedReader(InputStreamReader(stream, StandardCharsets.UTF_8))
+            .use { it.readText() }
+
+        if (responseCode !in 200..299) {
+            val errorMessage = try {
+                JSONObject(responseText).getJSONObject("error").getString("message")
+            } catch (_: Exception) {
+                "HTTP $responseCode"
+            }
+            throw IOException(errorMessage)
+        }
+
+        val candidates = JSONObject(responseText).optJSONArray("candidates")
+        val parts = candidates?.optJSONObject(0)
+            ?.optJSONObject("content")
+            ?.optJSONArray("parts")
+        val textBuilder = StringBuilder()
+        if (parts != null) {
+            for (i in 0 until parts.length()) {
+                val part = parts.getJSONObject(i)
+                // skip reasoning summaries, if a model returns them
+                if (!part.optBoolean("thought", false)) {
+                    textBuilder.append(part.optString("text"))
+                }
+            }
+        }
+
+        val answer = textBuilder.toString().trim()
+        if (answer.isEmpty()) {
+            throw IOException("risposta vuota")
         }
         return answer
     }
