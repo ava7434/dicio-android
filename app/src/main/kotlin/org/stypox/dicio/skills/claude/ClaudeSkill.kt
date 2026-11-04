@@ -1,6 +1,7 @@
 package org.stypox.dicio.skills.claude
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.dicio.skill.context.SkillContext
 import org.dicio.skill.skill.SkillInfo
@@ -37,7 +38,7 @@ class ClaudeSkill(correspondingSkillInfo: SkillInfo) :
                 val answer = when (provider) {
                     ClaudeInfo.Provider.CLAUDE ->
                         askClaude(apiKey, systemPrompt, history, inputData)
-                    ClaudeInfo.Provider.GEMINI -> askGemini(
+                    ClaudeInfo.Provider.GEMINI -> askGeminiWithRetry(
                         apiKey, ClaudeInfo.getGeminiModel(ctx.android),
                         systemPrompt, history, inputData,
                     )
@@ -135,6 +136,44 @@ class ClaudeSkill(correspondingSkillInfo: SkillInfo) :
     }
 
     /**
+     * Free-tier Gemini models are often temporarily overloaded (HTTP 503) or hit transient
+     * server errors. Retry once after a short pause, then fall back to the lighter (and usually
+     * less busy) model, so that the user rarely has to ask again.
+     */
+    @Throws(IOException::class)
+    private suspend fun askGeminiWithRetry(
+        apiKey: String,
+        model: String,
+        systemPrompt: String,
+        history: List<ConversationMemory.Turn>,
+        question: String,
+    ): String {
+        val models = listOf(model, ClaudeInfo.FALLBACK_GEMINI_MODEL).distinct()
+        var lastError: GeminiHttpException? = null
+        for (currentModel in models) {
+            repeat(2) { attempt ->
+                try {
+                    return askGemini(apiKey, currentModel, systemPrompt, history, question)
+                } catch (e: GeminiHttpException) {
+                    if (!e.isTemporary) throw e
+                    lastError = e
+                    if (attempt == 0) delay(1_500)
+                }
+            }
+        }
+        throw IOException(
+            "i server di Google sono sovraccarichi in questo momento, riprova tra poco",
+            lastError,
+        )
+    }
+
+    /** An error answer from the Gemini API, with its HTTP status code. */
+    private class GeminiHttpException(val code: Int, message: String) : IOException(message) {
+        // 503 = model overloaded, 500 = internal error; both usually go away quickly
+        val isTemporary get() = code == 503 || code == 500
+    }
+
+    /**
      * Uses the Gemini API (generateContent), which has a free tier. The key is sent in the
      * x-goog-api-key header rather than in the URL, so it does not end up in logs.
      */
@@ -200,7 +239,7 @@ class ClaudeSkill(correspondingSkillInfo: SkillInfo) :
             } catch (_: Exception) {
                 "HTTP $responseCode"
             }
-            throw IOException(errorMessage)
+            throw GeminiHttpException(responseCode, errorMessage)
         }
 
         val candidates = JSONObject(responseText).optJSONArray("candidates")

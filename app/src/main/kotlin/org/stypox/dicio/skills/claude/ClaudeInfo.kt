@@ -37,6 +37,8 @@ object ClaudeInfo : SkillInfo("claude") {
     private const val KEY_GEMINI_MODEL = "gemini_model"
     // alias that Google keeps pointing to its current Flash model, which has a free tier
     const val DEFAULT_GEMINI_MODEL = "gemini-flash-latest"
+    // lighter model, used automatically when the chosen one is overloaded
+    const val FALLBACK_GEMINI_MODEL = "gemini-flash-lite-latest"
     private const val KEY_MEMORY_ENABLED = "memory_enabled"
     private const val KEY_JARVIS_ENABLED = "jarvis_enabled"
     private const val KEY_USER_TITLE = "user_title"
