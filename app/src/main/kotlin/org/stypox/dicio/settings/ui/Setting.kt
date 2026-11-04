@@ -286,10 +286,13 @@ class StringSetting(
     private val icon: ImageVector? = null,
     private val description: String? = null,
     private val descriptionWhenEmpty: String? = null,
+    // for API keys and similar: only the last few characters are shown in the description
+    private val isSecret: Boolean = false,
 ) : SettingWithValue<String> {
     @Composable
     override fun Render(value: String, onValueChange: (String) -> Unit) {
         var dialogOpen by rememberSaveable { mutableStateOf(false) }
+        val shownValue = if (isSecret) maskSecret(value) else value
 
         SettingsItem(
             modifier = Modifier.clickable { dialogOpen = true },
@@ -298,12 +301,12 @@ class StringSetting(
             description = if (value.isEmpty()) {
                 descriptionWhenEmpty ?: description
             } else if (description == null) {
-                value
+                shownValue
             } else {
                 stringResource(
                     R.string.settings_description_with_value,
                     description,
-                    value
+                    shownValue
                 )
             },
         )
@@ -390,4 +393,9 @@ private fun ListSettingEditDialogPreview() {
         title = "A string setting",
         descriptionWhenEmpty = LoremIpsum(20).values.first()
     ).EditDialog("Initial value", {}, {})
+}
+
+private fun maskSecret(value: String): String {
+    val trimmed = value.trim()
+    return if (trimmed.length <= 8) "••••" else "••••" + trimmed.takeLast(4)
 }

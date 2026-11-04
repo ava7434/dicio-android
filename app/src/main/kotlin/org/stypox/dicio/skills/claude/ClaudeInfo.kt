@@ -170,6 +170,7 @@ object ClaudeInfo : SkillInfo("claude") {
                         title = "Gemini API key",
                         description = "Chiave gratuita da aistudio.google.com",
                         descriptionWhenEmpty = "Non impostata: crea una chiave su aistudio.google.com",
+                        isSecret = true,
                     ).Render(
                         value = geminiKey,
                         onValueChange = { newValue ->
@@ -194,6 +195,7 @@ object ClaudeInfo : SkillInfo("claude") {
                         title = "Anthropic API key",
                         description = "Usata per rispondere quando nessun altro skill capisce",
                         descriptionWhenEmpty = "Non impostata: il fallback resterà silenzioso",
+                        isSecret = true,
                     ).Render(
                         value = claudeKey,
                         onValueChange = { newValue ->
